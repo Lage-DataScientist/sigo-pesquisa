@@ -93,25 +93,34 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage",
             "--disable-gpu",
-            "--single-process",
+            # --single-process removido: instável no Linux e pode causar falhas JS
         ],
     }
     if chromium_path:
         launch_kwargs["executable_path"] = chromium_path
 
     browser: Browser = pw.chromium.launch(**launch_kwargs)
-    context: BrowserContext = browser.new_context()
-    context.set_default_timeout(60_000)   # 60s — cloud pode ser lento
+    # User-agent de Chrome real no Windows para evitar detecção de headless
+    context: BrowserContext = browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+    )
+    context.set_default_timeout(60_000)
     page: Page = context.new_page()
 
     try:
         page.goto(LOGIN_URL, timeout=60_000)
-        page.wait_for_load_state("networkidle", timeout=60_000)
-        page.fill(SELECTORS["username"], sigo_user)
-        page.fill(SELECTORS["password"], sigo_pass)
-        # Usar JS click para evitar que o campo password intercete o clique no botão
-        page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
-        page.wait_for_url("**/Inicio.jsp", timeout=30_000)
+        # Aguardar o campo de utilizador estar visível (mais fiável do que networkidle)
+        page.wait_for_selector(SELECTORS["username"], state="visible", timeout=30_000)
+        # type() simula teclas reais (dispara keydown/keyup/input) — fill() pode não chegar ao JSF
+        page.type(SELECTORS["username"], sigo_user, delay=40)
+        page.type(SELECTORS["password"], sigo_pass, delay=40)
+        # Enter na password é o método mais natural de submeter o formulário
+        page.press(SELECTORS["password"], "Return")
+        page.wait_for_url("**/Inicio.jsp", timeout=60_000)
         ok = True
         msg = "Sessão SIGO activa"
     except Exception as exc:
