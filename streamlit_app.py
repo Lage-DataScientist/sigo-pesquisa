@@ -127,8 +127,8 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
             page.wait_for_selector(SELECTORS["username"], state="visible", timeout=30_000)
             page.fill(SELECTORS["username"], sigo_user)
             page.fill(SELECTORS["password"], sigo_pass)
-            page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
-            page.wait_for_load_state("networkidle", timeout=60_000)
+            with page.expect_navigation(wait_until="networkidle", timeout=60_000):
+                page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
             logged_in = (
                 page.locator("text=Bem-vindos").count() > 0
                 or "Inicio" in page.url
@@ -187,8 +187,9 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
             page.fill(sel, "")
 
         page.fill(SEL_PESQ["nif"], nif)
-        page.evaluate("document.querySelector('#form1\\\\:ihFiltrar').click()")
-        page.wait_for_load_state("networkidle")
+        # expect_navigation garante que aguardamos a navegação completa antes de ler o DOM
+        with page.expect_navigation(wait_until="networkidle", timeout=60_000):
+            page.evaluate("document.querySelector('#form1\\\\:ihFiltrar').click()")
         return page.evaluate(JS_LER)
 
     raw = _pw(_do_pesquisa)
