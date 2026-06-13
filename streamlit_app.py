@@ -67,15 +67,13 @@ def _check_password() -> bool:
 _sigo_lock = threading.Lock()
 
 @st.cache_resource(show_spinner="A iniciar sessão SIGO...")
-def _init_sigo() -> dict:
+def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
     """
     Lança um browser Chromium e autentica no SIGO.
     Executado uma única vez; partilhado por todas as sessões Streamlit.
+    As credenciais são passadas como argumento para evitar problemas
+    com st.secrets dentro de cache_resource.
     """
-    # Credenciais carregadas em runtime (secrets já disponíveis aqui)
-    sigo_user = st.secrets.get("SIGO_USER", os.getenv("SIGO_USER", ""))
-    sigo_pass = st.secrets.get("SIGO_PASS", os.getenv("SIGO_PASS", ""))
-
     if not sigo_user or not sigo_pass:
         return {"pw": None, "browser": None, "context": None, "page": None,
                 "ok": False, "msg": "Credenciais SIGO não configuradas (definir SIGO_USER e SIGO_PASS nos Secrets)"}
@@ -128,7 +126,7 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
     Pesquisa o NIF no SIGO e devolve lista de Formando.
     Usa lock para serializar acessos ao browser.
     """
-    sigo = _init_sigo()
+    sigo = _init_sigo(*_get_credentials())
     page: Page = sigo["page"]
 
     URL = "https://www.sigo.pt/alunos/GestaoAlunos.jsp"
@@ -175,6 +173,17 @@ def _re_login():
     st.rerun()
 
 
+def _get_credentials() -> tuple[str, str]:
+    """Lê credenciais SIGO dos secrets ou variáveis de ambiente."""
+    try:
+        user = st.secrets.get("SIGO_USER", "") or os.getenv("SIGO_USER", "")
+        pwd  = st.secrets.get("SIGO_PASS", "") or os.getenv("SIGO_PASS", "")
+    except Exception:
+        user = os.getenv("SIGO_USER", "")
+        pwd  = os.getenv("SIGO_PASS", "")
+    return user, pwd
+
+
 # ── Interface ─────────────────────────────────────────────────────────────────
 
 if not _check_password():
@@ -186,7 +195,7 @@ with st.sidebar:
     st.markdown("**Pesquisa de Formandos**")
     st.divider()
 
-    sigo = _init_sigo()
+    sigo = _init_sigo(*_get_credentials())
     if sigo["ok"]:
         st.markdown(f'<p class="status-ok">● {sigo["msg"]}</p>', unsafe_allow_html=True)
     else:
