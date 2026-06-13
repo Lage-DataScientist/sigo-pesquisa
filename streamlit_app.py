@@ -6,18 +6,18 @@ Deploy: Streamlit Cloud (https://streamlit.io/cloud)
 
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 import re
 import threading
 import csv
-from concurrent.futures import ThreadPoolExecutor
 
 import streamlit as st
-from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
+from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 from sigo.modules.formandos import SEL_PESQ, Formando
-from sigo.config import CREDENTIALS, LOGIN_URL, SELECTORS
+from sigo.config import LOGIN_URL, SELECTORS
 
 # ── Configuração da página ────────────────────────────────────────────────────
 
@@ -45,14 +45,11 @@ st.markdown("""
 # ── Password ──────────────────────────────────────────────────────────────────
 
 def _check_password() -> bool:
-    """Bloqueia o acesso sem password correcta. Lê de st.secrets ou variável de ambiente."""
     app_pw = st.secrets.get("APP_PASSWORD", os.getenv("APP_PASSWORD", ""))
     if not app_pw:
-        return True  # sem password configurada, acesso livre
-
+        return True
     if st.session_state.get("autenticado"):
         return True
-
     st.sidebar.markdown("## 🔒 Acesso Restrito")
     pw = st.sidebar.text_input("Password", type="password", key="input_pw")
     if st.sidebar.button("Entrar"):
@@ -63,35 +60,55 @@ def _check_password() -> bool:
             st.sidebar.error("Password incorrecta.")
     return False
 
-# ── Thread dedicada ao Playwright ────────────────────────────────────────────
-# O Playwright sync API é thread-local: os objectos (page, browser) só podem
-# ser usados na thread onde foram criados. O Streamlit usa threads diferentes
-# por request, causando "cannot switch to a different thread".
-# Solução: um ThreadPoolExecutor com max_workers=1 garante que TODAS as
-# operações Playwright correm sempre na mesma thread persistente.
+# ── Event loop persistente para o Playwright async API ───────────────────────
+# O Playwright async API precisa de um event loop asyncio persistente.
+# Criamos uma thread dedicada que corre esse loop indefinidamente.
+# Todas as operações Playwright são coroutines submetidas a esse loop via
+# asyncio.run_coroutine_threadsafe(), que é thread-safe.
+
+class _LoopThread:
+    def __init__(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        self._t = threading.Thread(
+            target=self._run, daemon=True, name="pw-loop"
+        )
+        self._t.start()
+
+    def _run(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+    def submit(self, coro, timeout: int = 120):
+        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return fut.result(timeout=timeout)
 
 @st.cache_resource
-def _pw_executor() -> ThreadPoolExecutor:
-    return ThreadPoolExecutor(max_workers=1)
+def _loop_thread() -> _LoopThread:
+    return _LoopThread()
 
-def _pw(fn, timeout: int = 120):
-    """Executa fn na thread dedicada do Playwright e devolve o resultado."""
-    return _pw_executor().submit(fn).result(timeout=timeout)
+def _pw(coro, timeout: int = 120):
+    """Submete uma coroutine ao loop Playwright e devolve o resultado."""
+    return _loop_thread().submit(coro, timeout=timeout)
 
-# ── Sessão SIGO (partilhada por todos os utilizadores) ───────────────────────
+# ── Sessão SIGO ───────────────────────────────────────────────────────────────
+
+def _get_credentials() -> tuple[str, str]:
+    try:
+        user = st.secrets.get("SIGO_USER", "") or os.getenv("SIGO_USER", "")
+        pwd  = st.secrets.get("SIGO_PASS", "") or os.getenv("SIGO_PASS", "")
+    except Exception:
+        user = os.getenv("SIGO_USER", "")
+        pwd  = os.getenv("SIGO_PASS", "")
+    return user, pwd
 
 @st.cache_resource(show_spinner="A iniciar sessão SIGO...")
 def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
-    """
-    Lança Chromium e autentica no SIGO na thread dedicada do Playwright.
-    Executado uma única vez; resultado partilhado por todas as sessões.
-    """
     if not sigo_user or not sigo_pass:
         return {"pw": None, "browser": None, "context": None, "page": None,
                 "ok": False, "msg": "Credenciais SIGO não configuradas (definir SIGO_USER e SIGO_PASS nos Secrets)",
                 "jsessionid": ""}
 
-    def _do_init():
+    async def _do() -> dict:
         chromium_path = next(
             (p for p in ["/usr/bin/chromium", "/usr/bin/chromium-browser"] if os.path.exists(p)),
             None
@@ -111,28 +128,28 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
         if chromium_path:
             launch_kwargs["executable_path"] = chromium_path
 
-        pw = sync_playwright().start()
-        browser: Browser = pw.chromium.launch(**launch_kwargs)
-        context: BrowserContext = browser.new_context(
+        pw = await async_playwright().start()
+        browser: Browser = await pw.chromium.launch(**launch_kwargs)
+        context: BrowserContext = await browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
         )
-        context.set_default_timeout(60_000)
-        page: Page = context.new_page()
+        await context.set_default_timeout(60_000)
+        page: Page = await context.new_page()
 
         try:
-            page.goto(LOGIN_URL, timeout=60_000)
-            page.wait_for_selector(SELECTORS["username"], state="visible", timeout=30_000)
-            page.fill(SELECTORS["username"], sigo_user)
-            page.fill(SELECTORS["password"], sigo_pass)
-            with page.expect_navigation(wait_until="networkidle", timeout=60_000):
-                page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
+            await page.goto(LOGIN_URL, timeout=60_000)
+            await page.wait_for_selector(SELECTORS["username"], state="visible", timeout=30_000)
+            await page.fill(SELECTORS["username"], sigo_user)
+            await page.fill(SELECTORS["password"], sigo_pass)
+            async with page.expect_navigation(wait_until="networkidle", timeout=60_000):
+                await page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
             logged_in = (
-                page.locator("text=Bem-vindos").count() > 0
+                await page.locator("text=Bem-vindos").count() > 0
                 or "Inicio" in page.url
-                or page.locator(SELECTORS["submit_button"]).count() == 0
+                or await page.locator(SELECTORS["submit_button"]).count() == 0
             )
             if logged_in:
                 ok, msg = True, "Sessão SIGO activa"
@@ -146,17 +163,16 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
         return {"pw": pw, "browser": browser, "context": context, "page": page,
                 "ok": ok, "msg": msg, "jsessionid": jsessionid}
 
-    return _pw(_do_init)
+    return _pw(_do())
 
 
 def _pesquisar_nif(nif: str) -> list[Formando]:
-    """Pesquisa o NIF no SIGO na thread dedicada do Playwright."""
     sigo = _init_sigo(*_get_credentials())
     if not sigo["ok"]:
         raise RuntimeError(sigo["msg"])
 
-    page: Page    = sigo["page"]
-    jsessionid: str = sigo.get("jsessionid", "")
+    page: Page       = sigo["page"]
+    jsessionid: str  = sigo.get("jsessionid", "")
     URL = "https://www.sigo.pt/alunos/GestaoAlunos.jsp"
     JS_LER = """
     (() => {
@@ -175,42 +191,29 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
     })()
     """
 
-    def _do_pesquisa():
+    async def _do() -> list:
         if URL not in page.url:
             dest = f"{URL};jsessionid={jsessionid}" if jsessionid else URL
-            page.goto(dest)
-            page.wait_for_load_state("networkidle")
+            await page.goto(dest)
+            await page.wait_for_load_state("networkidle")
 
         for sel in [SEL_PESQ["n_sigo"], SEL_PESQ["nome"],
                     SEL_PESQ["n_identificacao"], SEL_PESQ["nif"],
                     SEL_PESQ["data_nascimento"]]:
-            page.fill(sel, "")
+            await page.fill(sel, "")
 
-        page.fill(SEL_PESQ["nif"], nif)
-        # expect_navigation garante que aguardamos a navegação completa antes de ler o DOM
-        with page.expect_navigation(wait_until="networkidle", timeout=60_000):
-            page.evaluate("document.querySelector('#form1\\\\:ihFiltrar').click()")
-        return page.evaluate(JS_LER)
+        await page.fill(SEL_PESQ["nif"], nif)
+        async with page.expect_navigation(wait_until="networkidle", timeout=60_000):
+            await page.evaluate("document.querySelector('#form1\\\\:ihFiltrar').click()")
+        return await page.evaluate(JS_LER)
 
-    raw = _pw(_do_pesquisa)
+    raw = _pw(_do())
     return [Formando(**r) for r in raw]
 
 
 def _re_login():
-    """Limpa a cache e força nova sessão SIGO."""
     _init_sigo.clear()
     st.rerun()
-
-
-def _get_credentials() -> tuple[str, str]:
-    """Lê credenciais SIGO dos secrets ou variáveis de ambiente."""
-    try:
-        user = st.secrets.get("SIGO_USER", "") or os.getenv("SIGO_USER", "")
-        pwd  = st.secrets.get("SIGO_PASS", "") or os.getenv("SIGO_PASS", "")
-    except Exception:
-        user = os.getenv("SIGO_USER", "")
-        pwd  = os.getenv("SIGO_PASS", "")
-    return user, pwd
 
 
 # ── Interface ─────────────────────────────────────────────────────────────────
@@ -231,7 +234,6 @@ with st.sidebar:
         st.markdown(f'<p class="status-err">● {sigo["msg"]}</p>', unsafe_allow_html=True)
         if st.button("🔄 Re-ligar"):
             _re_login()
-            st.rerun()
 
     st.divider()
     if st.button("🗑️ Limpar histórico"):
@@ -306,7 +308,6 @@ if submeter:
 if historico:
     st.subheader("Resultados")
 
-    # Preparar dados para tabela
     import pandas as pd
     df = pd.DataFrame([
         {
@@ -320,7 +321,6 @@ if historico:
 
     st.dataframe(df, use_container_width=True, hide_index=True)
 
-    # Export CSV
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
     writer.writerow(["NIF", "Estado", "Nome", "Nº SIGO"])
@@ -334,7 +334,7 @@ if historico:
 
     st.download_button(
         label="⬇️ Exportar CSV",
-        data="\ufeff" + buf.getvalue(),  # BOM UTF-8 para Excel
+        data="﻿" + buf.getvalue(),
         file_name="sigo_formandos.csv",
         mime="text/csv",
     )
