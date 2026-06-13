@@ -118,19 +118,21 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
         page.fill(SELECTORS["password"], sigo_pass)
         # JS click submete o formulário JSF sem problemas de z-index
         page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
-        # Aguardar qualquer navegação (não só Inicio.jsp) para diagnóstico
+        # SIGO usa JSF/AJAX — não redireciona para Inicio.jsp, o URL mantém-se
+        # em Login.jsp;jsessionid=... mas o conteúdo muda para o dashboard autenticado
         page.wait_for_load_state("networkidle", timeout=60_000)
-        if "Inicio.jsp" in page.url:
+        # Verificar autenticação pelo conteúdo: "Bem-vindos" ou ausência do botão de login
+        logged_in = (
+            page.locator("text=Bem-vindos").count() > 0
+            or "Inicio" in page.url
+            or page.locator(SELECTORS["submit_button"]).count() == 0
+        )
+        if logged_in:
             ok = True
             msg = "Sessão SIGO activa"
         else:
-            # Capturar mensagem de erro do SIGO para diagnóstico
-            try:
-                body = page.locator("body").inner_text(timeout=5_000)[:400]
-            except Exception:
-                body = "(sem conteúdo)"
             ok = False
-            msg = f"Login rejeitado. URL: {page.url[:120]} | Resposta: {body}"
+            msg = "Login falhou — verifique as credenciais SIGO nos Secrets"
     except Exception as exc:
         ok = False
         msg = f"Falha no login: {exc}"
