@@ -119,7 +119,7 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
         page.type(SELECTORS["username"], sigo_user, delay=40)
         page.type(SELECTORS["password"], sigo_pass, delay=40)
         # Enter na password é o método mais natural de submeter o formulário
-        page.press(SELECTORS["password"], "Return")
+        page.press(SELECTORS["password"], "Enter")
         page.wait_for_url("**/Inicio.jsp", timeout=60_000)
         ok = True
         msg = "Sessão SIGO activa"
