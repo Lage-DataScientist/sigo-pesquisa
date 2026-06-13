@@ -113,16 +113,24 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
 
     try:
         page.goto(LOGIN_URL, timeout=60_000)
-        # Aguardar o campo de utilizador estar visível (mais fiável do que networkidle)
         page.wait_for_selector(SELECTORS["username"], state="visible", timeout=30_000)
-        # type() simula teclas reais (dispara keydown/keyup/input) — fill() pode não chegar ao JSF
-        page.type(SELECTORS["username"], sigo_user, delay=40)
-        page.type(SELECTORS["password"], sigo_pass, delay=40)
-        # Enter na password é o método mais natural de submeter o formulário
-        page.press(SELECTORS["password"], "Enter")
-        page.wait_for_url("**/Inicio.jsp", timeout=60_000)
-        ok = True
-        msg = "Sessão SIGO activa"
+        page.fill(SELECTORS["username"], sigo_user)
+        page.fill(SELECTORS["password"], sigo_pass)
+        # JS click submete o formulário JSF sem problemas de z-index
+        page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
+        # Aguardar qualquer navegação (não só Inicio.jsp) para diagnóstico
+        page.wait_for_load_state("networkidle", timeout=60_000)
+        if "Inicio.jsp" in page.url:
+            ok = True
+            msg = "Sessão SIGO activa"
+        else:
+            # Capturar mensagem de erro do SIGO para diagnóstico
+            try:
+                body = page.locator("body").inner_text(timeout=5_000)[:400]
+            except Exception:
+                body = "(sem conteúdo)"
+            ok = False
+            msg = f"Login rejeitado. URL: {page.url[:120]} | Resposta: {body}"
     except Exception as exc:
         ok = False
         msg = f"Falha no login: {exc}"
