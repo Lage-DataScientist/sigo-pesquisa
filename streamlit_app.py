@@ -11,6 +11,7 @@ import os
 import re
 import threading
 import csv
+from concurrent.futures import ThreadPoolExecutor
 
 import streamlit as st
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
@@ -62,100 +63,100 @@ def _check_password() -> bool:
             st.sidebar.error("Password incorrecta.")
     return False
 
-# ── Sessão SIGO (partilhada por todos os utilizadores) ───────────────────────
+# ── Thread dedicada ao Playwright ────────────────────────────────────────────
+# O Playwright sync API é thread-local: os objectos (page, browser) só podem
+# ser usados na thread onde foram criados. O Streamlit usa threads diferentes
+# por request, causando "cannot switch to a different thread".
+# Solução: um ThreadPoolExecutor com max_workers=1 garante que TODAS as
+# operações Playwright correm sempre na mesma thread persistente.
 
-_sigo_lock = threading.Lock()
+@st.cache_resource
+def _pw_executor() -> ThreadPoolExecutor:
+    return ThreadPoolExecutor(max_workers=1)
+
+def _pw(fn, timeout: int = 120):
+    """Executa fn na thread dedicada do Playwright e devolve o resultado."""
+    return _pw_executor().submit(fn).result(timeout=timeout)
+
+# ── Sessão SIGO (partilhada por todos os utilizadores) ───────────────────────
 
 @st.cache_resource(show_spinner="A iniciar sessão SIGO...")
 def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
     """
-    Lança um browser Chromium e autentica no SIGO.
-    Executado uma única vez; partilhado por todas as sessões Streamlit.
-    As credenciais são passadas como argumento para evitar problemas
-    com st.secrets dentro de cache_resource.
+    Lança Chromium e autentica no SIGO na thread dedicada do Playwright.
+    Executado uma única vez; resultado partilhado por todas as sessões.
     """
     if not sigo_user or not sigo_pass:
         return {"pw": None, "browser": None, "context": None, "page": None,
-                "ok": False, "msg": "Credenciais SIGO não configuradas (definir SIGO_USER e SIGO_PASS nos Secrets)"}
+                "ok": False, "msg": "Credenciais SIGO não configuradas (definir SIGO_USER e SIGO_PASS nos Secrets)",
+                "jsessionid": ""}
 
-    pw = sync_playwright().start()
-
-    # Em Streamlit Cloud usa o Chromium do sistema (packages.txt).
-    # Localmente usa o Playwright bundled.
-    chromium_path = next(
-        (p for p in ["/usr/bin/chromium", "/usr/bin/chromium-browser"] if os.path.exists(p)),
-        None
-    )
-    launch_kwargs: dict = {
-        "headless": True,
-        "args": [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            # --single-process removido: instável no Linux e pode causar falhas JS
-        ],
-    }
-    if chromium_path:
-        launch_kwargs["executable_path"] = chromium_path
-
-    browser: Browser = pw.chromium.launch(**launch_kwargs)
-    # User-agent de Chrome real no Windows para evitar detecção de headless
-    context: BrowserContext = browser.new_context(
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
+    def _do_init():
+        chromium_path = next(
+            (p for p in ["/usr/bin/chromium", "/usr/bin/chromium-browser"] if os.path.exists(p)),
+            None
         )
-    )
-    context.set_default_timeout(60_000)
-    page: Page = context.new_page()
+        launch_kwargs: dict = {
+            "headless": True,
+            "args": [
+                "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
+                "--disable-gpu", "--single-process",
+                "--disable-extensions", "--disable-plugins",
+                "--disable-background-networking", "--disable-breakpad",
+                "--disable-default-apps", "--disable-sync", "--disable-translate",
+                "--no-first-run", "--no-default-browser-check",
+                "--safebrowsing-disable-auto-update", "--password-store=basic",
+            ],
+        }
+        if chromium_path:
+            launch_kwargs["executable_path"] = chromium_path
 
-    try:
-        page.goto(LOGIN_URL, timeout=60_000)
-        page.wait_for_selector(SELECTORS["username"], state="visible", timeout=30_000)
-        page.fill(SELECTORS["username"], sigo_user)
-        page.fill(SELECTORS["password"], sigo_pass)
-        # JS click submete o formulário JSF sem problemas de z-index
-        page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
-        # SIGO usa JSF/AJAX — não redireciona para Inicio.jsp, o URL mantém-se
-        # em Login.jsp;jsessionid=... mas o conteúdo muda para o dashboard autenticado
-        page.wait_for_load_state("networkidle", timeout=60_000)
-        # Verificar autenticação pelo conteúdo: "Bem-vindos" ou ausência do botão de login
-        logged_in = (
-            page.locator("text=Bem-vindos").count() > 0
-            or "Inicio" in page.url
-            or page.locator(SELECTORS["submit_button"]).count() == 0
+        pw = sync_playwright().start()
+        browser: Browser = pw.chromium.launch(**launch_kwargs)
+        context: BrowserContext = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            )
         )
-        if logged_in:
-            ok = True
-            msg = "Sessão SIGO activa"
-            # Guardar jsessionid — o SIGO usa URL session tracking (não cookie)
-            # É necessário incluí-lo em navegações subsequentes para manter a sessão
-            import re as _re
-            _m = _re.search(r';jsessionid=([^?#&]+)', page.url)
-            jsessionid = _m.group(1) if _m else ""
-        else:
-            ok = False
-            msg = "Login falhou — verifique as credenciais SIGO nos Secrets"
-            jsessionid = ""
-    except Exception as exc:
-        ok = False
-        msg = f"Falha no login: {exc}"
-        jsessionid = ""
+        context.set_default_timeout(60_000)
+        page: Page = context.new_page()
 
-    return {"pw": pw, "browser": browser, "context": context, "page": page,
-            "ok": ok, "msg": msg, "jsessionid": jsessionid}
+        try:
+            page.goto(LOGIN_URL, timeout=60_000)
+            page.wait_for_selector(SELECTORS["username"], state="visible", timeout=30_000)
+            page.fill(SELECTORS["username"], sigo_user)
+            page.fill(SELECTORS["password"], sigo_pass)
+            page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
+            page.wait_for_load_state("networkidle", timeout=60_000)
+            logged_in = (
+                page.locator("text=Bem-vindos").count() > 0
+                or "Inicio" in page.url
+                or page.locator(SELECTORS["submit_button"]).count() == 0
+            )
+            if logged_in:
+                ok, msg = True, "Sessão SIGO activa"
+                _m = re.search(r';jsessionid=([^?#&]+)', page.url)
+                jsessionid = _m.group(1) if _m else ""
+            else:
+                ok, msg, jsessionid = False, "Login falhou — verifique as credenciais SIGO nos Secrets", ""
+        except Exception as exc:
+            ok, msg, jsessionid = False, f"Falha no login: {exc}", ""
+
+        return {"pw": pw, "browser": browser, "context": context, "page": page,
+                "ok": ok, "msg": msg, "jsessionid": jsessionid}
+
+    return _pw(_do_init)
 
 
 def _pesquisar_nif(nif: str) -> list[Formando]:
-    """
-    Pesquisa o NIF no SIGO e devolve lista de Formando.
-    Usa lock para serializar acessos ao browser.
-    """
+    """Pesquisa o NIF no SIGO na thread dedicada do Playwright."""
     sigo = _init_sigo(*_get_credentials())
-    page: Page = sigo["page"]
+    if not sigo["ok"]:
+        raise RuntimeError(sigo["msg"])
 
+    page: Page    = sigo["page"]
+    jsessionid: str = sigo.get("jsessionid", "")
     URL = "https://www.sigo.pt/alunos/GestaoAlunos.jsp"
     JS_LER = """
     (() => {
@@ -174,15 +175,12 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
     })()
     """
 
-    with _sigo_lock:
+    def _do_pesquisa():
         if URL not in page.url:
-            # Incluir jsessionid no URL para manter a sessão (SIGO usa URL tracking)
-            jsessionid = sigo.get("jsessionid", "")
             dest = f"{URL};jsessionid={jsessionid}" if jsessionid else URL
             page.goto(dest)
             page.wait_for_load_state("networkidle")
 
-        # Limpar campos
         for sel in [SEL_PESQ["n_sigo"], SEL_PESQ["nome"],
                     SEL_PESQ["n_identificacao"], SEL_PESQ["nif"],
                     SEL_PESQ["data_nascimento"]]:
@@ -191,9 +189,9 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
         page.fill(SEL_PESQ["nif"], nif)
         page.evaluate("document.querySelector('#form1\\\\:ihFiltrar').click()")
         page.wait_for_load_state("networkidle")
+        return page.evaluate(JS_LER)
 
-        raw = page.evaluate(JS_LER)
-
+    raw = _pw(_do_pesquisa)
     return [Formando(**r) for r in raw]
 
 
