@@ -261,47 +261,62 @@ if total > 0:
 
 # Formulário de pesquisa
 with st.form("form_pesquisa", clear_on_submit=True):
-    col_inp, col_btn = st.columns([3, 1])
-    nif_input = col_inp.text_input(
-        "NIF", placeholder="000000000",
-        max_chars=9, label_visibility="collapsed",
-        help="9 dígitos numéricos"
+    nif_input = st.text_area(
+        "NIFs (um por linha)",
+        placeholder="231272839\n123456789\n987654321",
+        height=160,
+        help="Insira um NIF por linha. São aceites até 200 NIFs de uma vez.",
     )
-    submeter = col_btn.form_submit_button("🔍 Pesquisar", use_container_width=True)
+    submeter = st.form_submit_button("🔍 Pesquisar", use_container_width=True)
 
 if submeter:
-    nif = nif_input.strip().replace(" ", "")
+    # Parsear e validar lista de NIFs
+    linhas = [l.strip().replace(" ", "") for l in nif_input.splitlines() if l.strip()]
+    nifs_validos   = [n for n in linhas if re.fullmatch(r"\d{9}", n)]
+    nifs_invalidos = [n for n in linhas if not re.fullmatch(r"\d{9}", n)]
 
-    if not re.fullmatch(r"\d{9}", nif):
-        st.error("NIF inválido — deve ter exactamente 9 dígitos numéricos.")
+    if not linhas:
+        st.error("Insira pelo menos um NIF.")
+    elif nifs_invalidos:
+        st.error(f"NIFs inválidos (não têm 9 dígitos): {', '.join(nifs_invalidos)}")
     elif not sigo["ok"]:
         st.error(f"SIGO indisponível: {sigo['msg']}")
     else:
-        with st.spinner("A pesquisar no SIGO..."):
+        # Remover duplicados mantendo ordem
+        vistos: set[str] = set()
+        nifs_unicos = [n for n in nifs_validos if not (n in vistos or vistos.add(n))]
+
+        progresso = st.progress(0, text=f"A pesquisar 0 / {len(nifs_unicos)}…")
+        erros: list[str] = []
+
+        for i, nif in enumerate(nifs_unicos):
+            progresso.progress((i + 1) / len(nifs_unicos),
+                               text=f"A pesquisar {i + 1} / {len(nifs_unicos)} — NIF {nif}")
             try:
                 resultados = _pesquisar_nif(nif)
             except Exception as exc:
-                st.error(f"Erro ao pesquisar: {exc}")
-                st.stop()
+                erros.append(f"{nif}: {exc}")
+                continue
 
-        if resultados:
-            for f in resultados:
+            if resultados:
+                for f in resultados:
+                    st.session_state["historico"].append({
+                        "nif_pesq": nif,
+                        "encontrado": True,
+                        "nome": f.nome,
+                        "n_sigo": f.n_sigo,
+                    })
+            else:
                 st.session_state["historico"].append({
                     "nif_pesq": nif,
-                    "encontrado": True,
-                    "nome": f.nome,
-                    "n_sigo": f.n_sigo,
+                    "encontrado": False,
+                    "nome": "",
+                    "n_sigo": "",
                 })
-            st.success(f"✅ Encontrado: **{resultados[0].nome}** — SIGO `{resultados[0].n_sigo}`")
-        else:
-            st.session_state["historico"].append({
-                "nif_pesq": nif,
-                "encontrado": False,
-                "nome": "",
-                "n_sigo": "",
-            })
-            st.warning(f"Nenhum formando encontrado com NIF **{nif}**.")
 
+        progresso.empty()
+        if erros:
+            st.warning("Erros durante a pesquisa:\n" + "\n".join(erros))
         st.rerun()
 
 # Tabela de resultados
