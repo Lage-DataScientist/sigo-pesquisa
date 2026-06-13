@@ -176,7 +176,7 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
     URL = "https://www.sigo.pt/alunos/GestaoAlunos.jsp"
     JS_LER = """
     (() => {
-        const rows = Array.from(document.querySelectorAll('#form1\\:table1 tbody tr'));
+        const rows = Array.from(document.querySelectorAll('#form1\\\\:table1 tbody tr'));
         return rows.map(r => {
             const cells = Array.from(r.querySelectorAll('td'));
             if (cells.length < 5) return null;
