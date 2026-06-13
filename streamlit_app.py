@@ -72,6 +72,14 @@ def _init_sigo() -> dict:
     Lança um browser Chromium e autentica no SIGO.
     Executado uma única vez; partilhado por todas as sessões Streamlit.
     """
+    # Credenciais carregadas em runtime (secrets já disponíveis aqui)
+    sigo_user = st.secrets.get("SIGO_USER", os.getenv("SIGO_USER", ""))
+    sigo_pass = st.secrets.get("SIGO_PASS", os.getenv("SIGO_PASS", ""))
+
+    if not sigo_user or not sigo_pass:
+        return {"pw": None, "browser": None, "context": None, "page": None,
+                "ok": False, "msg": "Credenciais SIGO não configuradas (definir SIGO_USER e SIGO_PASS nos Secrets)"}
+
     pw = sync_playwright().start()
 
     # Em Streamlit Cloud usa o Chromium do sistema (packages.txt).
@@ -82,24 +90,29 @@ def _init_sigo() -> dict:
     )
     launch_kwargs: dict = {
         "headless": True,
-        "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+        "args": [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--single-process",
+        ],
     }
     if chromium_path:
         launch_kwargs["executable_path"] = chromium_path
 
     browser: Browser = pw.chromium.launch(**launch_kwargs)
     context: BrowserContext = browser.new_context()
-    context.set_default_timeout(30_000)
+    context.set_default_timeout(60_000)   # 60s — cloud pode ser lento
     page: Page = context.new_page()
 
-    # Login
-    page.goto(LOGIN_URL)
-    page.wait_for_load_state("networkidle")
-    page.fill(SELECTORS["username"], CREDENTIALS["username"])
-    page.fill(SELECTORS["password"], CREDENTIALS["password"])
-    page.click(SELECTORS["submit_button"])
     try:
-        page.wait_for_url("**/Inicio.jsp", timeout=20_000)
+        page.goto(LOGIN_URL, timeout=60_000)
+        page.wait_for_load_state("networkidle", timeout=60_000)
+        page.fill(SELECTORS["username"], sigo_user)
+        page.fill(SELECTORS["password"], sigo_pass)
+        page.click(SELECTORS["submit_button"])
+        page.wait_for_url("**/Inicio.jsp", timeout=30_000)
         ok = True
         msg = "Sessão SIGO activa"
     except Exception as exc:
