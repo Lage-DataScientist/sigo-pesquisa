@@ -32,13 +32,142 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-  [data-testid="stSidebar"] { background: #003876; }
-  [data-testid="stSidebar"] * { color: #fff !important; }
-  [data-testid="stSidebar"] .stTextInput input { color: #000 !important; }
-  .sigo-header { color: #003876; font-weight: 700; }
-  .status-ok  { color: #28a745; font-weight: 600; }
-  .status-err { color: #dc3545; font-weight: 600; }
-  div[data-testid="metric-container"] { background: #f8f9fa; border-radius: .5rem; padding: .5rem; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Reset global */
+html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+#MainMenu, footer, header { visibility: hidden; }
+
+/* Fundo */
+.stApp { background: #f0f4f8; }
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0b1f45 0%, #1a3a6b 100%) !important;
+    border-right: 1px solid rgba(255,255,255,0.08);
+}
+[data-testid="stSidebar"] * { color: #e8edf5 !important; }
+[data-testid="stSidebar"] .stTextInput input {
+    background: rgba(255,255,255,0.12) !important;
+    border: 1px solid rgba(255,255,255,0.2) !important;
+    color: #fff !important;
+    border-radius: 8px !important;
+}
+[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.15) !important; }
+[data-testid="stSidebar"] .stButton > button {
+    background: rgba(255,255,255,0.12) !important;
+    border: 1px solid rgba(255,255,255,0.2) !important;
+    color: #fff !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    transition: all .2s !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255,255,255,0.22) !important;
+}
+
+/* ── Área principal ── */
+.main .block-container { padding: 2rem 2.5rem 3rem !important; max-width: 1100px; }
+
+/* ── Métricas ── */
+div[data-testid="metric-container"] {
+    background: #fff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 14px !important;
+    padding: 1.2rem 1.5rem !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
+}
+div[data-testid="metric-container"] label { color: #64748b !important; font-size: .8rem !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: .05em; }
+div[data-testid="metric-container"] [data-testid="stMetricValue"] { color: #0f172a !important; font-size: 2rem !important; font-weight: 700 !important; }
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: #e2e8f0;
+    border-radius: 12px;
+    padding: 4px;
+    gap: 2px;
+    border-bottom: none !important;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 9px !important;
+    padding: 8px 22px !important;
+    font-weight: 600 !important;
+    font-size: .88rem !important;
+    color: #475569 !important;
+    border: none !important;
+    background: transparent !important;
+}
+.stTabs [aria-selected="true"] {
+    background: #fff !important;
+    color: #1a3a6b !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important;
+}
+
+/* ── File uploader ── */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #cbd5e1 !important;
+    border-radius: 14px !important;
+    background: #fff !important;
+    padding: 1rem !important;
+    transition: border-color .2s !important;
+}
+[data-testid="stFileUploader"]:hover { border-color: #1a3a6b !important; }
+
+/* ── Botões principais ── */
+.stButton > button, .stFormSubmitButton > button {
+    background: linear-gradient(135deg, #1a3a6b 0%, #2563eb 100%) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    font-size: .9rem !important;
+    padding: .6rem 1.4rem !important;
+    box-shadow: 0 2px 8px rgba(26,58,107,0.25) !important;
+    transition: all .2s !important;
+}
+.stButton > button:hover, .stFormSubmitButton > button:hover {
+    box-shadow: 0 4px 16px rgba(26,58,107,0.35) !important;
+    transform: translateY(-1px) !important;
+}
+.stButton > button:disabled { background: #94a3b8 !important; box-shadow: none !important; transform: none !important; }
+
+/* ── Download button ── */
+[data-testid="stDownloadButton"] > button {
+    background: #fff !important;
+    color: #1a3a6b !important;
+    border: 2px solid #1a3a6b !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+}
+[data-testid="stDownloadButton"] > button:hover {
+    background: #f0f4f8 !important;
+    box-shadow: 0 2px 8px rgba(26,58,107,0.15) !important;
+}
+
+/* ── Text area e selectbox ── */
+.stTextArea textarea, .stSelectbox select, [data-baseweb="select"] {
+    border-radius: 10px !important;
+    border: 1.5px solid #cbd5e1 !important;
+    background: #fff !important;
+}
+.stTextArea textarea:focus { border-color: #1a3a6b !important; box-shadow: 0 0 0 3px rgba(26,58,107,0.12) !important; }
+
+/* ── Dataframe ── */
+[data-testid="stDataFrame"] { border-radius: 14px !important; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+
+/* ── Alertas ── */
+[data-testid="stAlert"] { border-radius: 10px !important; }
+
+/* ── Progress bar ── */
+[data-testid="stProgressBar"] > div > div { background: linear-gradient(90deg, #1a3a6b, #2563eb) !important; border-radius: 99px; }
+
+/* ── Badges de estado ── */
+.badge-ok  { display:inline-block; background:#dcfce7; color:#166534; padding:2px 10px; border-radius:99px; font-size:.82rem; font-weight:600; }
+.badge-err { display:inline-block; background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:99px; font-size:.82rem; font-weight:600; }
+.badge-conn{ display:inline-block; padding:4px 12px; border-radius:99px; font-size:.82rem; font-weight:600; }
+.badge-conn.ok  { background:rgba(22,163,74,.2); color:#bbf7d0; }
+.badge-conn.err { background:rgba(239,68,68,.2); color:#fca5a5; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -50,9 +179,15 @@ def _check_password() -> bool:
         return True
     if st.session_state.get("autenticado"):
         return True
-    st.sidebar.markdown("## 🔒 Acesso Restrito")
-    pw = st.sidebar.text_input("Password", type="password", key="input_pw")
-    if st.sidebar.button("Entrar"):
+    st.sidebar.markdown("""
+        <div style="text-align:center; padding: 1.5rem 0 1rem;">
+            <div style="font-size:2.5rem;">🔒</div>
+            <div style="font-size:1.1rem; font-weight:700; color:#fff; margin-top:.5rem;">Acesso Restrito</div>
+            <div style="font-size:.82rem; color:rgba(255,255,255,.6); margin-top:.3rem;">Introduza a password para continuar</div>
+        </div>
+    """, unsafe_allow_html=True)
+    pw = st.sidebar.text_input("Password", type="password", key="input_pw", label_visibility="collapsed", placeholder="Password…")
+    if st.sidebar.button("Entrar", use_container_width=True):
         if pw == app_pw:
             st.session_state["autenticado"] = True
             st.rerun()
@@ -223,41 +358,65 @@ if not _check_password():
 
 # Sidebar
 with st.sidebar:
-    st.markdown("## 🎓 SIGO")
-    st.markdown("**Pesquisa de Formandos**")
+    st.markdown("""
+        <div style="padding: 1.5rem 0 .5rem; text-align:center;">
+            <div style="font-size:2.8rem; line-height:1;">🎓</div>
+            <div style="font-size:1.4rem; font-weight:800; color:#fff; margin-top:.6rem; letter-spacing:-.01em;">SIGO</div>
+            <div style="font-size:.78rem; color:rgba(255,255,255,.55); margin-top:.2rem; text-transform:uppercase; letter-spacing:.08em;">Pesquisa de Formandos</div>
+        </div>
+    """, unsafe_allow_html=True)
     st.divider()
 
     sigo = _init_sigo(*_get_credentials())
     if sigo["ok"]:
-        st.markdown(f'<p class="status-ok">● {sigo["msg"]}</p>', unsafe_allow_html=True)
+        st.markdown('<span class="badge-conn ok">⬤ &nbsp;Sessão activa</span>', unsafe_allow_html=True)
     else:
-        st.markdown(f'<p class="status-err">● {sigo["msg"]}</p>', unsafe_allow_html=True)
-        if st.button("🔄 Re-ligar"):
+        st.markdown('<span class="badge-conn err">⬤ &nbsp;Sessão inactiva</span>', unsafe_allow_html=True)
+        st.caption(sigo["msg"])
+        if st.button("🔄 Re-ligar", use_container_width=True):
             _re_login()
 
     st.divider()
-    if st.button("🗑️ Limpar histórico"):
+    if st.button("🗑️ Limpar resultados", use_container_width=True):
         st.session_state["historico"] = []
         st.rerun()
+
+    st.markdown("""
+        <div style="position:absolute; bottom:1.5rem; left:0; right:0; text-align:center;
+                    font-size:.72rem; color:rgba(255,255,255,.3);">
+            Gomes & Canoso, Lda.
+        </div>
+    """, unsafe_allow_html=True)
 
 # Inicializar histórico
 if "historico" not in st.session_state:
     st.session_state["historico"] = []
 
-# Cabeçalho
-st.markdown('<h2 class="sigo-header">Pesquisa de Formandos por NIF</h2>', unsafe_allow_html=True)
+# ── Cabeçalho principal ───────────────────────────────────────────────────────
+st.markdown("""
+<div style="background: linear-gradient(135deg, #0b1f45 0%, #1a3a6b 55%, #2563eb 100%);
+            border-radius: 18px; padding: 2rem 2.5rem; margin-bottom: 2rem;
+            display: flex; align-items: center; gap: 1.5rem;">
+    <div style="background:rgba(255,255,255,0.12); border-radius:14px; padding:1rem; font-size:2.2rem; line-height:1;">🎓</div>
+    <div>
+        <div style="color:rgba(255,255,255,.6); font-size:.78rem; text-transform:uppercase; letter-spacing:.1em; font-weight:600; margin-bottom:.3rem;">Sistema de Informação</div>
+        <div style="color:#fff; font-size:1.6rem; font-weight:800; letter-spacing:-.02em; line-height:1.1;">Pesquisa de Formandos</div>
+        <div style="color:rgba(255,255,255,.55); font-size:.85rem; margin-top:.4rem;">Consulte o registo de formandos por NIF</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-# Estatísticas
+# ── Estatísticas ──────────────────────────────────────────────────────────────
 historico: list[dict] = st.session_state["historico"]
 total = len(historico)
 encontrados = sum(1 for h in historico if h["encontrado"])
 
 if total > 0:
     c1, c2, c3 = st.columns(3)
-    c1.metric("Pesquisas", total)
-    c2.metric("Encontrados", encontrados)
+    c1.metric("Total pesquisados", total)
+    c2.metric("Registados no SIGO", encontrados)
     c3.metric("Não encontrados", total - encontrados)
-    st.divider()
+    st.markdown("<div style='margin-bottom:1rem'></div>", unsafe_allow_html=True)
 
 # Formulário de pesquisa
 import pandas as pd
@@ -367,21 +526,49 @@ if pesquisar_manual:
     else:
         _pesquisar_lista(linhas)
 
-# Tabela de resultados
+# ── Tabela de resultados ──────────────────────────────────────────────────────
 if historico:
-    st.subheader("Resultados")
+    st.markdown("""
+        <div style="display:flex; align-items:center; gap:.7rem; margin-bottom:1rem;">
+            <div style="font-size:1.1rem; font-weight:700; color:#0f172a;">Resultados</div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    df = pd.DataFrame([
-        {
-            "NIF": h["nif_pesq"],
-            "Estado": "✅ Registado" if h["encontrado"] else "❌ Não encontrado",
-            "Nome": h["nome"],
-            "Nº SIGO": h["n_sigo"],
-        }
-        for h in historico
-    ])
+    # Construir HTML da tabela
+    linhas_html = ""
+    for h in historico:
+        badge = ('<span class="badge-ok">Registado</span>' if h["encontrado"]
+                 else '<span class="badge-err">Não encontrado</span>')
+        linhas_html += f"""
+        <tr>
+            <td style="font-family:monospace; font-size:.88rem; color:#334155;">{h['nif_pesq']}</td>
+            <td>{badge}</td>
+            <td style="font-weight:500; color:#0f172a;">{h['nome'] or '—'}</td>
+            <td style="font-family:monospace; font-size:.88rem; color:#2563eb; font-weight:600;">{h['n_sigo'] or '—'}</td>
+        </tr>"""
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.markdown(f"""
+    <div style="background:#fff; border-radius:16px; border:1px solid #e2e8f0;
+                box-shadow:0 1px 4px rgba(0,0,0,0.06); overflow:hidden; margin-bottom:1.2rem;">
+        <table style="width:100%; border-collapse:collapse; font-size:.9rem;">
+            <thead>
+                <tr style="background:#f8fafc; border-bottom:1.5px solid #e2e8f0;">
+                    <th style="padding:.85rem 1.2rem; text-align:left; color:#64748b; font-size:.75rem;
+                               text-transform:uppercase; letter-spacing:.06em; font-weight:600;">NIF</th>
+                    <th style="padding:.85rem 1.2rem; text-align:left; color:#64748b; font-size:.75rem;
+                               text-transform:uppercase; letter-spacing:.06em; font-weight:600;">Estado</th>
+                    <th style="padding:.85rem 1.2rem; text-align:left; color:#64748b; font-size:.75rem;
+                               text-transform:uppercase; letter-spacing:.06em; font-weight:600;">Nome</th>
+                    <th style="padding:.85rem 1.2rem; text-align:left; color:#64748b; font-size:.75rem;
+                               text-transform:uppercase; letter-spacing:.06em; font-weight:600;">Nº SIGO</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(f'<tr style="border-bottom:1px solid #f1f5f9;">{r}</tr>' for r in linhas_html.split('<tr>')[1:])}
+            </tbody>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
 
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
@@ -390,8 +577,7 @@ if historico:
         writer.writerow([
             h["nif_pesq"],
             "Registado" if h["encontrado"] else "Não encontrado",
-            h["nome"],
-            h["n_sigo"],
+            h["nome"], h["n_sigo"],
         ])
 
     st.download_button(
