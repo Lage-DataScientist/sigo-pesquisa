@@ -170,16 +170,9 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
 
 
 def _re_login():
-    """Tenta fazer re-login se a sessão SIGO tiver expirado."""
-    sigo = _init_sigo()
-    page: Page = sigo["page"]
-    with _sigo_lock:
-        page.goto(LOGIN_URL)
-        page.wait_for_load_state("networkidle")
-        page.fill(SELECTORS["username"], CREDENTIALS["username"])
-        page.fill(SELECTORS["password"], CREDENTIALS["password"])
-        page.click(SELECTORS["submit_button"])
-        page.wait_for_url("**/Inicio.jsp", timeout=20_000)
+    """Limpa a cache e força nova sessão SIGO."""
+    _init_sigo.clear()
+    st.rerun()
 
 
 # ── Interface ─────────────────────────────────────────────────────────────────
