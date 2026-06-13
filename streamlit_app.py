@@ -130,15 +130,22 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
         if logged_in:
             ok = True
             msg = "Sessão SIGO activa"
+            # Guardar jsessionid — o SIGO usa URL session tracking (não cookie)
+            # É necessário incluí-lo em navegações subsequentes para manter a sessão
+            import re as _re
+            _m = _re.search(r';jsessionid=([^?#&]+)', page.url)
+            jsessionid = _m.group(1) if _m else ""
         else:
             ok = False
             msg = "Login falhou — verifique as credenciais SIGO nos Secrets"
+            jsessionid = ""
     except Exception as exc:
         ok = False
         msg = f"Falha no login: {exc}"
+        jsessionid = ""
 
     return {"pw": pw, "browser": browser, "context": context, "page": page,
-            "ok": ok, "msg": msg}
+            "ok": ok, "msg": msg, "jsessionid": jsessionid}
 
 
 def _pesquisar_nif(nif: str) -> list[Formando]:
@@ -169,7 +176,10 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
 
     with _sigo_lock:
         if URL not in page.url:
-            page.goto(URL)
+            # Incluir jsessionid no URL para manter a sessão (SIGO usa URL tracking)
+            jsessionid = sigo.get("jsessionid", "")
+            dest = f"{URL};jsessionid={jsessionid}" if jsessionid else URL
+            page.goto(dest)
             page.wait_for_load_state("networkidle")
 
         # Limpar campos
@@ -179,7 +189,7 @@ def _pesquisar_nif(nif: str) -> list[Formando]:
             page.fill(sel, "")
 
         page.fill(SEL_PESQ["nif"], nif)
-        page.click(SEL_PESQ["lnk_pesquisar"])
+        page.evaluate("document.querySelector('#form1\\\\:ihFiltrar').click()")
         page.wait_for_load_state("networkidle")
 
         raw = page.evaluate(JS_LER)
