@@ -260,70 +260,117 @@ if total > 0:
     st.divider()
 
 # Formulário de pesquisa
-with st.form("form_pesquisa", clear_on_submit=True):
-    nif_input = st.text_area(
-        "NIFs (um por linha)",
-        placeholder="231272839\n123456789\n987654321",
-        height=160,
-        help="Insira um NIF por linha. São aceites até 200 NIFs de uma vez.",
+import pandas as pd
+
+tab_excel, tab_manual = st.tabs(["📂 Carregar Excel", "⌨️ Inserir manualmente"])
+
+with tab_excel:
+    ficheiro = st.file_uploader(
+        "Ficheiro Excel com NIFs",
+        type=["xlsx", "xls"],
+        help="O ficheiro deve ter uma coluna com NIFs de 9 dígitos.",
     )
-    submeter = st.form_submit_button("🔍 Pesquisar", use_container_width=True)
+    col_sel, col_btn2 = st.columns([2, 1])
+    coluna_nif = None
+    df_excel = None
 
-if submeter:
-    # Parsear e validar lista de NIFs
+    if ficheiro:
+        try:
+            df_excel = pd.read_excel(ficheiro, dtype=str)
+            # Auto-detectar coluna NIF: primeira coluna onde ≥50% dos valores são 9 dígitos
+            def _score_nif(col):
+                vals = df_excel[col].dropna().str.strip().str.replace(r"\s", "", regex=True)
+                return vals.str.fullmatch(r"\d{9}").mean()
+            scores = {c: _score_nif(c) for c in df_excel.columns}
+            melhor = max(scores, key=scores.get)
+            default_idx = list(df_excel.columns).index(melhor) if scores[melhor] > 0 else 0
+            coluna_nif = col_sel.selectbox(
+                "Coluna com NIFs",
+                options=list(df_excel.columns),
+                index=default_idx,
+            )
+            col_sel.caption(f"{len(df_excel)} linhas carregadas · coluna detectada: **{melhor}**")
+        except Exception as exc:
+            st.error(f"Erro ao ler Excel: {exc}")
+
+    pesquisar_excel = col_btn2.button(
+        "🔍 Pesquisar Excel", disabled=(df_excel is None), use_container_width=True
+    )
+
+with tab_manual:
+    with st.form("form_manual", clear_on_submit=True):
+        nif_input = st.text_area(
+            "NIFs (um por linha)",
+            placeholder="231272839\n123456789\n987654321",
+            height=160,
+            help="Insira um NIF por linha.",
+        )
+        pesquisar_manual = st.form_submit_button("🔍 Pesquisar", use_container_width=True)
+
+
+def _extrair_nifs_excel(df: pd.DataFrame, coluna: str) -> tuple[list[str], list[str]]:
+    vals = df[coluna].dropna().astype(str).str.strip().str.replace(r"\s", "", regex=True)
+    validos   = [v for v in vals if re.fullmatch(r"\d{9}", v)]
+    invalidos = [v for v in vals if v and not re.fullmatch(r"\d{9}", v)]
+    return validos, invalidos
+
+
+def _pesquisar_lista(nifs: list[str]) -> None:
+    if not sigo["ok"]:
+        st.error(f"SIGO indisponível: {sigo['msg']}")
+        return
+    vistos: set[str] = set()
+    nifs_unicos = [n for n in nifs if not (n in vistos or vistos.add(n))]
+    progresso = st.progress(0, text=f"A pesquisar 0 / {len(nifs_unicos)}…")
+    erros: list[str] = []
+    for i, nif in enumerate(nifs_unicos):
+        progresso.progress((i + 1) / len(nifs_unicos),
+                           text=f"A pesquisar {i + 1} / {len(nifs_unicos)} — NIF {nif}")
+        try:
+            resultados = _pesquisar_nif(nif)
+        except Exception as exc:
+            erros.append(f"{nif}: {exc}")
+            continue
+        if resultados:
+            for f in resultados:
+                st.session_state["historico"].append({
+                    "nif_pesq": nif, "encontrado": True,
+                    "nome": f.nome, "n_sigo": f.n_sigo,
+                })
+        else:
+            st.session_state["historico"].append({
+                "nif_pesq": nif, "encontrado": False, "nome": "", "n_sigo": "",
+            })
+    progresso.empty()
+    if erros:
+        st.warning("Erros durante a pesquisa:\n" + "\n".join(erros))
+    st.rerun()
+
+
+if pesquisar_excel and df_excel is not None and coluna_nif:
+    validos, invalidos = _extrair_nifs_excel(df_excel, coluna_nif)
+    if invalidos:
+        st.warning(f"Ignorados {len(invalidos)} valores sem 9 dígitos: {', '.join(invalidos[:10])}" +
+                   (" …" if len(invalidos) > 10 else ""))
+    if not validos:
+        st.error("Nenhum NIF válido encontrado na coluna seleccionada.")
+    else:
+        _pesquisar_lista(validos)
+
+if pesquisar_manual:
     linhas = [l.strip().replace(" ", "") for l in nif_input.splitlines() if l.strip()]
-    nifs_validos   = [n for n in linhas if re.fullmatch(r"\d{9}", n)]
-    nifs_invalidos = [n for n in linhas if not re.fullmatch(r"\d{9}", n)]
-
+    invalidos = [n for n in linhas if not re.fullmatch(r"\d{9}", n)]
     if not linhas:
         st.error("Insira pelo menos um NIF.")
-    elif nifs_invalidos:
-        st.error(f"NIFs inválidos (não têm 9 dígitos): {', '.join(nifs_invalidos)}")
-    elif not sigo["ok"]:
-        st.error(f"SIGO indisponível: {sigo['msg']}")
+    elif invalidos:
+        st.error(f"NIFs inválidos: {', '.join(invalidos)}")
     else:
-        # Remover duplicados mantendo ordem
-        vistos: set[str] = set()
-        nifs_unicos = [n for n in nifs_validos if not (n in vistos or vistos.add(n))]
-
-        progresso = st.progress(0, text=f"A pesquisar 0 / {len(nifs_unicos)}…")
-        erros: list[str] = []
-
-        for i, nif in enumerate(nifs_unicos):
-            progresso.progress((i + 1) / len(nifs_unicos),
-                               text=f"A pesquisar {i + 1} / {len(nifs_unicos)} — NIF {nif}")
-            try:
-                resultados = _pesquisar_nif(nif)
-            except Exception as exc:
-                erros.append(f"{nif}: {exc}")
-                continue
-
-            if resultados:
-                for f in resultados:
-                    st.session_state["historico"].append({
-                        "nif_pesq": nif,
-                        "encontrado": True,
-                        "nome": f.nome,
-                        "n_sigo": f.n_sigo,
-                    })
-            else:
-                st.session_state["historico"].append({
-                    "nif_pesq": nif,
-                    "encontrado": False,
-                    "nome": "",
-                    "n_sigo": "",
-                })
-
-        progresso.empty()
-        if erros:
-            st.warning("Erros durante a pesquisa:\n" + "\n".join(erros))
-        st.rerun()
+        _pesquisar_lista(linhas)
 
 # Tabela de resultados
 if historico:
     st.subheader("Resultados")
 
-    import pandas as pd
     df = pd.DataFrame([
         {
             "NIF": h["nif_pesq"],
