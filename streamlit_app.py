@@ -280,13 +280,8 @@ if submeter:
             try:
                 resultados = _pesquisar_nif(nif)
             except Exception as exc:
-                # Tentar re-login
-                try:
-                    _re_login()
-                    resultados = _pesquisar_nif(nif)
-                except Exception:
-                    st.error(f"Erro ao pesquisar: {exc}")
-                    st.stop()
+                st.error(f"Erro ao pesquisar: {exc}")
+                st.stop()
 
         if resultados:
             for f in resultados:
