@@ -76,12 +76,15 @@ def _init_sigo() -> dict:
 
     # Em Streamlit Cloud usa o Chromium do sistema (packages.txt).
     # Localmente usa o Playwright bundled.
-    chromium_path = "/usr/bin/chromium-browser"
+    chromium_path = next(
+        (p for p in ["/usr/bin/chromium", "/usr/bin/chromium-browser"] if os.path.exists(p)),
+        None
+    )
     launch_kwargs: dict = {
         "headless": True,
         "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     }
-    if os.path.exists(chromium_path):
+    if chromium_path:
         launch_kwargs["executable_path"] = chromium_path
 
     browser: Browser = pw.chromium.launch(**launch_kwargs)
