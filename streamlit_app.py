@@ -109,7 +109,8 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
         page.wait_for_load_state("networkidle", timeout=60_000)
         page.fill(SELECTORS["username"], sigo_user)
         page.fill(SELECTORS["password"], sigo_pass)
-        page.click(SELECTORS["submit_button"])
+        # Usar JS click para evitar que o campo password intercete o clique no botão
+        page.evaluate("document.querySelector('#form1\\\\:btLogin').click()")
         page.wait_for_url("**/Inicio.jsp", timeout=30_000)
         ok = True
         msg = "Sessão SIGO activa"
