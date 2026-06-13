@@ -136,7 +136,7 @@ def _init_sigo(sigo_user: str, sigo_pass: str) -> dict:
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
         )
-        await context.set_default_timeout(60_000)
+        context.set_default_timeout(60_000)
         page: Page = await context.new_page()
 
         try:
